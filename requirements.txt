@@ -1,7 +1,3 @@
-flask
-torch
-transformers
-flask-cors
 fastapi
+uvicorn
 gunicorn
-scikit-learn
