@@ -7,19 +7,29 @@ import re
 app = Flask(__name__, static_folder="static")
 CORS(app)
 
-# Load MuRIL model from local directory
-tokenizer = AutoTokenizer.from_pretrained("muril_model")
-model = AutoModelForSequenceClassification.from_pretrained("muril_model")
-model.eval()
-id2label = model.config.id2label
+# -----------------------------
+# Lazy model loading (IMPORTANT)
+# -----------------------------
+tokenizer = None
+model = None
+id2label = None
 
-# Preprocess input text
+def load_model():
+    global tokenizer, model, id2label
+    if model is None:
+        tokenizer = AutoTokenizer.from_pretrained("muril_model")
+        model = AutoModelForSequenceClassification.from_pretrained("muril_model")
+        model.eval()
+        id2label = model.config.id2label
+
+# -----------------------------
+# Utilities
+# -----------------------------
 def clean_text(text):
     text = text.lower()
     text = re.sub(r'[^a-zA-Z0-9\u0900-\u097F\s]', '', text)
     return re.sub(r'\s+', ' ', text).strip()
 
-# Simple language detection
 def detect_language(text):
     devanagari = sum('\u0900' <= ch <= '\u097F' for ch in text)
     latin = sum('a' <= ch.lower() <= 'z' for ch in text)
@@ -31,14 +41,15 @@ def detect_language(text):
         return "English"
     return "Unknown"
 
-# Run the model prediction
 def predict_intent(text):
+    load_model()  # lazy load here
     cleaned = clean_text(text)
     inputs = tokenizer(cleaned, return_tensors="pt", truncation=True, padding=True)
     with torch.no_grad():
         outputs = model(**inputs)
         probs = torch.nn.functional.softmax(outputs.logits, dim=1)
         conf, pred = torch.max(probs, dim=1)
+
     return {
         "text_input": text,
         "language_detected": detect_language(text),
@@ -46,32 +57,37 @@ def predict_intent(text):
         "confidence_score": round(conf.item(), 2)
     }
 
-# Main prediction route
+# -----------------------------
+# Routes
+# -----------------------------
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "API running"})
+
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.json
-    text = data.get("text", "").strip().lower()
+    data = request.get_json(silent=True)
 
-    # Handle invalid or unrelated inputs
+    if not data or "text" not in data:
+        return jsonify({"error": "No text provided"}), 400
+
+    text = data["text"].strip()
+
     invalid_inputs = [
         "hi", "hello", "how are you", "who are you", "what is your name", "thanks",
         "thank you", "good morning", "good night", "ok", "bye", "help", "?", "!"
     ]
 
-    if text in invalid_inputs or len(text.split()) < 3:
-        return make_response(
-            "Sorry, I can't understand your problem. Please type your complaint. Thank you.",
-            200
-        )
+    if text.lower() in invalid_inputs or len(text.split()) < 3:
+        return jsonify({
+            "message": "कृपया अपनी समस्या या शिकायत स्पष्ट रूप से लिखें।"
+        }), 200
 
-    # Valid complaint input, run prediction
-    result = predict_intent(data["text"])
+    result = predict_intent(text)
     return jsonify(result)
 
-# Serve the frontend HTML
 @app.route("/")
 def serve_html():
     return send_from_directory("static", "index.html")
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# ❌ DO NOT use app.run() in production
