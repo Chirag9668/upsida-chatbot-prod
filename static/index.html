@@ -85,47 +85,42 @@
   <button id="sendBtn" onclick="sendText()">Send</button>
 
   <script>
-    function appendMessage(text, sender) {
-      const container = document.getElementById("chat-container");
-      const msgDiv = document.createElement("div");
-      msgDiv.classList.add("message", sender);
-      msgDiv.innerText = text;
-      container.appendChild(msgDiv);
-      container.scrollTop = container.scrollHeight;
+  function appendMessage(text, sender) {
+    const container = document.getElementById("chat-container");
+    const msgDiv = document.createElement("div");
+    msgDiv.classList.add("message", sender);
+    msgDiv.innerText = text;
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  async function sendText() {
+    const inputField = document.getElementById("inputText");
+    const userInput = inputField.value.trim();
+
+    if (!userInput) return;
+
+    appendMessage(userInput, "user");
+
+    const res = await fetch("/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: userInput })
+    });
+
+    inputField.value = "";
+
+    if (res.ok) {
+      const data = await res.json();
+
+      const botReply =
+        `Intent: ${data.intent}\n` +
+        `Language: ${data.language}\n` +
+        `Confidence: ${data.confidence}`;
+
+      appendMessage(botReply, "bot");
+    } else {
+      appendMessage("❌ Something went wrong.", "bot");
     }
-
-    async function sendText() {
-      const inputField = document.getElementById("inputText");
-      const userInput = inputField.value.trim();
-
-      if (!userInput) return;
-
-      appendMessage(userInput, "user");
-
-      const res = await fetch("/predict", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: userInput })
-      });
-
-      inputField.value = "";
-
-      if (res.ok) {
-        const contentType = res.headers.get("content-type");
-
-        if (contentType && contentType.includes("application/json")) {
-          const data = await res.json();
-          const botReply = `Intent: ${data.predicted_intent}\nLanguage: ${data.language_detected}\nConfidence: ${data.confidence_score}`;
-          appendMessage(botReply, "bot");
-        } else {
-          const plainText = await res.text();
-          appendMessage(plainText, "bot");
-        }
-      } else {
-        appendMessage("❌ Something went wrong.", "bot");
-      }
-    }
-  </script>
-
-</body>
-</html>
+  }
+</script>
